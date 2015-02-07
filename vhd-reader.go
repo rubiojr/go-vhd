@@ -216,7 +216,7 @@ func readVHDHeader(vhdHeader []byte) VHDHeader {
 	fmtField("Timestamp", fmt.Sprintf("%s", t))
 
 	fmtField("Creator application", string(header.CreatorApplication[:]))
-	fmtField("Creator version", string(header.CreatorVersion[:]))
+	fmtField("Creator version", hexs(header.CreatorVersion[:]))
 	fmtField("Creator OS", string(header.CreatorHostOS[:]))
 
 	originalSize := binary.BigEndian.Uint64(header.OriginalSize[:])

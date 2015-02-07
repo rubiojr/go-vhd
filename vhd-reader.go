@@ -251,7 +251,13 @@ func readVHDHeader(vhdHeader []byte) VHDHeader {
 
 func main() {
 
-	f, err := os.Open("0.vhd")
+	if len(os.Args) != 2 {
+		fmt.Println("Usage: vhd-reader <vhd-file>")
+		os.Exit(0)
+	}
+
+	vhd := os.Args[1]
+	f, err := os.Open(vhd)
 	check(err)
 	defer f.Close()
 
@@ -270,7 +276,6 @@ func main() {
 	fmt.Println("\nReading VHD footer...")
 	fstat, err := f.Stat()
 	check(err)
-	fmt.Println(fstat.Size())
 	vhdFooter := make([]byte, 512)
 	f.Seek(fstat.Size()-512, 0)
 	_, err = f.Read(vhdFooter)

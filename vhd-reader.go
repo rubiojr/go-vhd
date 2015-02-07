@@ -52,6 +52,28 @@ func utf16BytesToString(b []byte, o binary.ByteOrder) string {
 }
 
 /* VHD Dynamic and Differential Header */
+/*
+	Cookie 8
+	Data Offset 8
+	Table Offset 8
+	Header Version 4
+	Max Table Entries 4
+	Block Size 4
+	Checksum 4
+	Parent Unique ID 16
+	Parent Time Stamp 4
+	Reserved 4
+	Parent Unicode Name 512
+	Parent Locator Entry 1 24
+	Parent Locator Entry 2 24
+	Parent Locator Entry 3 24
+	Parent Locator Entry 4 24
+	Parent Locator Entry 5 24
+	Parent Locator Entry 6 24
+	Parent Locator Entry 7 24
+	Parent Locator Entry 8 24
+	Reserved 256
+*/
 type VHDExtraHeader struct {
 	Cookie              [8]byte
 	DataOffset          [8]byte
@@ -80,7 +102,24 @@ func (header *VHDExtraHeader) CookieString() string {
 }
 
 /* VHD Header */
-
+/*
+ Cookie 8
+ Features 4
+ File Format Version 4
+ Data Offset 8
+ Time Stamp 4
+ Creator Application 4
+ Creator Version 4
+ Creator Host OS 4
+ Original Size 8
+ Current Size 8
+ Disk Geometry 4
+ Disk Type 4
+ Checksum 4
+ Unique Id 16
+ Saved State 1
+ Reserved 427
+*/
 type VHDHeader struct {
 	Cookie             [8]byte
 	Features           [4]byte
@@ -124,28 +163,6 @@ func (h *VHDHeader) DiskTypeStr() (dt string) {
 }
 
 func readVHDExtraHeader(f *os.File) {
-	/*
-		Cookie 8
-		Data Offset 8
-		Table Offset 8
-		Header Version 4
-		Max Table Entries 4
-		Block Size 4
-		Checksum 4
-		Parent Unique ID 16
-		Parent Time Stamp 4
-		Reserved 4
-		Parent Unicode Name 512
-		Parent Locator Entry 1 24
-		Parent Locator Entry 2 24
-		Parent Locator Entry 3 24
-		Parent Locator Entry 4 24
-		Parent Locator Entry 5 24
-		Parent Locator Entry 6 24
-		Parent Locator Entry 7 24
-		Parent Locator Entry 8 24
-		Reserved 256
-	*/
 	vhdHeader := make([]byte, 1024)
 	_, err := f.Read(vhdHeader)
 	check(err)
@@ -185,31 +202,8 @@ func readVHDHeader(vhdHeader []byte) VHDHeader {
 	var header VHDHeader
 	binary.Read(bytes.NewBuffer(vhdHeader[:]), binary.BigEndian, &header)
 
-	/*
-	 Cookie 8
-	 Features 4
-	 File Format Version 4
-	 Data Offset 8
-	 Time Stamp 4
-	 Creator Application 4
-	 Creator Version 4
-	 Creator Host OS 4
-	 Original Size 8
-	 Current Size 8
-	 Disk Geometry 4
-	 Disk Type 4
-	 Checksum 4
-	 Unique Id 16
-	 Saved State 1
-	 Reserved 427
-	*/
-	//fmt.Printf("Cookie: %s\n", string(header[:8]))
 	fmtField("Cookie", string(header.Cookie[:]))
-
-	//fmt.Printf("Features: %s\n", hexs(header[8:12]))
 	fmtField("Features", hexs(header.Features[:]))
-
-	//fmt.Printf("File format version: %s\n", hexs(header[12:16]))
 	fmtField("File format version", hexs(header.FileFormatVersion[:]))
 
 	dataOffset := binary.BigEndian.Uint64(header.DataOffset[:])

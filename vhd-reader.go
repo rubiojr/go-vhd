@@ -183,7 +183,7 @@ func readVHDExtraHeader(f *os.File) {
 	// 946684800 = January 1, 2000 12:00:00 AM in UTC/GMT.
 	tstamp := binary.BigEndian.Uint32(header.ParentTimestamp[:])
 	t := time.Unix(int64(946684800+tstamp), 0)
-	fmtField("Timestamp", fmt.Sprintf("%s", t))
+	fmtField("Parent timestamp", fmt.Sprintf("%s", t))
 
 	fmtField("Reserved", hexs(header.Reserved[:]))
 	parentName := utf16BytesToString(header.ParentUnicodeName[:],

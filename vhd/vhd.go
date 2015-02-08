@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -12,8 +13,10 @@ import (
 	"unicode/utf8"
 )
 
-const VHD_COOKIE = "0x636f6e6563746978"
-const VHD_DYN_COOKIE = "0x6378737061727365"
+const VHD_COOKIE = "636f6e6563746978"     // conectix
+const VHD_DYN_COOKIE = "6378737061727365" // cxsparse
+const VHD_CREATOR_APP = "676f2d766864"    // go-vhd
+const VHD_CREATOR_HOST_OS = "5769326B"    // Win2k
 
 func fmtField(name, value string) {
 	fmt.Printf("%-25s%s\n", name+":", value)
@@ -36,6 +39,52 @@ func uuid(a []byte) string {
 		a[6:8],
 		a[8:10],
 		a[10:16])
+}
+
+func calculateCHS(ts uint64) []uint {
+	var sectorsPerTrack,
+		heads,
+		cylinderTimesHeads,
+		cylinders float64
+	totalSectors := float64(ts)
+
+	ret := make([]uint, 3)
+
+	if totalSectors > 65535*16*255 {
+		totalSectors = 65535 * 16 * 255
+	}
+
+	if totalSectors >= 65535*16*63 {
+		sectorsPerTrack = 255
+		heads = 16
+		cylinderTimesHeads = totalSectors / sectorsPerTrack
+	} else {
+		sectorsPerTrack = 17
+		cylinderTimesHeads = totalSectors / sectorsPerTrack
+		heads = (cylinderTimesHeads + 1023) / 1024
+		if heads < 4 {
+			heads = 4
+		}
+		if (cylinderTimesHeads >= (heads * 1024)) || heads > 16 {
+			sectorsPerTrack = 31
+			heads = 16
+			cylinderTimesHeads = totalSectors / sectorsPerTrack
+		}
+		if cylinderTimesHeads >= (heads * 1024) {
+			sectorsPerTrack = 63
+			heads = 16
+			cylinderTimesHeads = totalSectors / sectorsPerTrack
+		}
+	}
+
+	cylinders = cylinderTimesHeads / heads
+
+	// This will floor the values
+	ret[0] = uint(cylinders)
+	ret[1] = uint(heads)
+	ret[2] = uint(sectorsPerTrack)
+
+	return ret
 }
 
 /*
@@ -165,6 +214,11 @@ func (h *VHDHeader) DiskTypeStr() (dt string) {
 	return
 }
 
+func (h *VHDHeader) TimestampTime() time.Time {
+	tstamp := binary.BigEndian.Uint32(h.Timestamp[:])
+	return time.Unix(int64(946684800+tstamp), 0)
+}
+
 func readVHDExtraHeader(f *os.File) {
 	vhdHeader := make([]byte, 1024)
 	_, err := f.Read(vhdHeader)
@@ -174,7 +228,7 @@ func readVHDExtraHeader(f *os.File) {
 	binary.Read(bytes.NewBuffer(vhdHeader[:]), binary.BigEndian, &header)
 
 	fmtField("Cookie", fmt.Sprintf("%s (%s)",
-	         hexs(header.Cookie[:]), header.CookieString()))
+		hexs(header.Cookie[:]), header.CookieString()))
 	fmtField("Data offset", hexs(header.DataOffset[:]))
 	fmtField("Table offset", hexs(header.TableOffset[:]))
 	fmtField("Header version", hexs(header.HeaderVersion[:]))
@@ -208,7 +262,7 @@ func readVHDHeader(vhdHeader []byte) VHDHeader {
 
 	//fmtField("Cookie", string(header.Cookie[:]))
 	fmtField("Cookie", fmt.Sprintf("%s (%s)",
-	         hexs(header.Cookie[:]), string(header.Cookie[:])))
+		hexs(header.Cookie[:]), string(header.Cookie[:])))
 	fmtField("Features", hexs(header.Features[:]))
 	fmtField("File format version", hexs(header.FileFormatVersion[:]))
 
@@ -260,17 +314,38 @@ func getMaxTableEntries(diskSize uint64) uint64 {
 	return diskSize * (2 * 1024 * 1024) // block size is 2M
 }
 
-//func createSparseVHD(size uint64, name string) {
-//	cookie, err := hex.DecodeString(VHD_COOKIE)
-//	check(err)
-//	fmt.Println(hexs(cookie[:]))
-//
-//	header := VHDHeader{
-//		//Cookie: cookie,
-//	}
-//
-//	fmt.Println(header)
-//}
+func hexToField(hexs string, field []byte) {
+	h, err := hex.DecodeString(hexs)
+	check(err)
+
+	copy(field, h)
+}
+
+func CreateSparseVHD(size uint64, name string) {
+
+	header := VHDHeader{}
+	hexToField(VHD_COOKIE, header.Cookie[:])
+	hexToField("00000002", header.Features[:])
+	hexToField("00010000", header.FileFormatVersion[:])
+	hexToField("0000000000000200", header.DataOffset[:])
+
+	t := uint32(time.Now().Unix() - 946684800)
+	binary.BigEndian.PutUint32(header.Timestamp[:], t)
+	hexToField(VHD_CREATOR_APP, header.CreatorApplication[:])
+	hexToField(VHD_CREATOR_HOST_OS, header.CreatorHostOS[:])
+	binary.BigEndian.PutUint64(header.OriginalSize[:], size)
+	binary.BigEndian.PutUint64(header.CurrentSize[:], size)
+
+	// total sectors = disk size / 512b sector size
+	totalSectors := math.Floor(float64(size / 512))
+  // [C, H, S]
+	geometry := calculateCHS(uint64(totalSectors))
+	binary.BigEndian.PutUint16(header.DiskGeometry[:2], uint16(geometry[0]))
+	header.DiskGeometry[2] = uint8(geometry[1])
+	header.DiskGeometry[3] = uint8(geometry[2])
+
+	fmt.Println(header)
+}
 
 func PrintVHDHeaders(f *os.File) {
 	vhdHeader := make([]byte, 512)

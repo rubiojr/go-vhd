@@ -19,6 +19,7 @@ const VHD_CREATOR_APP = "676f2d766864"    // go-vhd
 const VHD_CREATOR_HOST_OS = "5769326B"    // Win2k
 const VHD_BLOCK_SIZE = 2 * 1024 * 1024    // 2MB
 const VHD_HEADER_SIZE = 512
+const SECTOR_SIZE = 512
 const VHD_EXTRA_HEADER_SIZE = 1024
 
 func fmtField(name, value string) {
@@ -75,23 +76,23 @@ func calculateCHS(ts uint64) []uint {
 	if totalSectors >= 65535*16*63 {
 		sectorsPerTrack = 255
 		heads = 16
-		cylinderTimesHeads = totalSectors / sectorsPerTrack
+		cylinderTimesHeads = math.Floor(totalSectors / sectorsPerTrack)
 	} else {
 		sectorsPerTrack = 17
-		cylinderTimesHeads = totalSectors / sectorsPerTrack
-		heads = (cylinderTimesHeads + 1023) / 1024
+		cylinderTimesHeads = math.Floor(totalSectors / sectorsPerTrack)
+		heads = math.Floor((cylinderTimesHeads + 1023) / 1024)
 		if heads < 4 {
 			heads = 4
 		}
 		if (cylinderTimesHeads >= (heads * 1024)) || heads > 16 {
 			sectorsPerTrack = 31
 			heads = 16
-			cylinderTimesHeads = totalSectors / sectorsPerTrack
+			cylinderTimesHeads = math.Floor(totalSectors / sectorsPerTrack)
 		}
 		if cylinderTimesHeads >= (heads * 1024) {
 			sectorsPerTrack = 63
 			heads = 16
-			cylinderTimesHeads = totalSectors / sectorsPerTrack
+			cylinderTimesHeads = math.Floor(totalSectors / sectorsPerTrack)
 		}
 	}
 

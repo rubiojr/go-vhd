@@ -401,8 +401,10 @@ func CreateSparseVHD(size uint64, name string) {
 	// header size + sparse header size
 	binary.BigEndian.PutUint64(header2.TableOffset[:], uint64(VHD_EXTRA_HEADER_SIZE+VHD_HEADER_SIZE))
 	hexToField("00010000", header2.HeaderVersion[:])
+
 	maxTableSize := uint32(size / (VHD_BLOCK_SIZE))
 	binary.BigEndian.PutUint32(header2.MaxTableEntries[:], maxTableSize)
+
 	binary.BigEndian.PutUint32(header2.BlockSize[:], VHD_BLOCK_SIZE)
 	binary.BigEndian.PutUint32(header2.ParentTimestamp[:], uint32(0))
 	header2.addChecksum()
@@ -413,13 +415,18 @@ func CreateSparseVHD(size uint64, name string) {
 
 	binary.Write(f, binary.BigEndian, header)
 	binary.Write(f, binary.BigEndian, header2)
-	buf := make([]byte, 32)
-	hexToField("ffffffff", buf[:])
-	bte := uint32(0)
-	for bte = 0; bte < maxTableSize; bte += 1 {
-		binary.Write(f, binary.BigEndian, buf)
+
+	// Write BAT entries
+	for count := uint32(0); count < maxTableSize; count += 1 {
+		f.Write(bytes.Repeat([]byte{0xff}, 4))
 	}
-	fmt.Printf("%d BAT entries written", bte)
+
+	// The BAT is always extended to a sector boundary
+	// Windows creates 8K VHDs by default
+	for count := uint32(0); count < (1536 - maxTableSize); count += 1 {
+		f.Write(bytes.Repeat([]byte{0x0}, 4))
+	}
+
 	binary.Write(f, binary.BigEndian, header)
 }
 

@@ -17,9 +17,27 @@ const VHD_COOKIE = "636f6e6563746978"     // conectix
 const VHD_DYN_COOKIE = "6378737061727365" // cxsparse
 const VHD_CREATOR_APP = "676f2d766864"    // go-vhd
 const VHD_CREATOR_HOST_OS = "5769326B"    // Win2k
+const VHD_BLOCK_SIZE = 2 * 1024 * 1024    // 2MB
+const VHD_HEADER_SIZE = 512
+const VHD_EXTRA_HEADER_SIZE = 1024
 
 func fmtField(name, value string) {
 	fmt.Printf("%-25s%s\n", name+":", value)
+}
+
+// https://groups.google.com/forum/#!msg/golang-nuts/d0nF_k4dSx4/rPGgfXv6QCoJ
+func uuidgen() string {
+	b := uuidgenBytes()
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+func uuidgenBytes() []byte {
+	f, err := os.Open("/dev/urandom")
+	check(err)
+	b := make([]byte, 16)
+	f.Read(b)
+	return b
 }
 
 func check(e error) {
@@ -149,6 +167,19 @@ type VHDExtraHeader struct {
 	Reserved2           [256]byte
 }
 
+func (h *VHDExtraHeader) addChecksum() {
+	buffer := new(bytes.Buffer)
+	binary.Write(buffer, binary.BigEndian, h)
+	checksum := 0
+	bb := buffer.Bytes()
+
+	for counter := 0; counter < VHD_EXTRA_HEADER_SIZE; counter++ {
+		checksum += int(bb[counter])
+	}
+
+	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
+}
+
 func (header *VHDExtraHeader) CookieString() string {
 	return string(header.Cookie[:])
 }
@@ -189,6 +220,19 @@ type VHDHeader struct {
 	UniqueId           [16]byte
 	SavedState         [1]byte
 	Reserved           [427]byte
+}
+
+func (h *VHDHeader) addChecksum() {
+	buffer := new(bytes.Buffer)
+	binary.Write(buffer, binary.BigEndian, h)
+	checksum := 0
+	bb := buffer.Bytes()
+
+	for counter := 0; counter < VHD_HEADER_SIZE; counter++ {
+		checksum += int(bb[counter])
+	}
+
+	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
 }
 
 func (h *VHDHeader) DiskTypeStr() (dt string) {
@@ -322,7 +366,6 @@ func hexToField(hexs string, field []byte) {
 }
 
 func CreateSparseVHD(size uint64, name string) {
-
 	header := VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
@@ -338,13 +381,45 @@ func CreateSparseVHD(size uint64, name string) {
 
 	// total sectors = disk size / 512b sector size
 	totalSectors := math.Floor(float64(size / 512))
-  // [C, H, S]
+	// [C, H, S]
 	geometry := calculateCHS(uint64(totalSectors))
 	binary.BigEndian.PutUint16(header.DiskGeometry[:2], uint16(geometry[0]))
 	header.DiskGeometry[2] = uint8(geometry[1])
 	header.DiskGeometry[3] = uint8(geometry[2])
 
-	fmt.Println(header)
+	hexToField("00000003", header.DiskType[:]) // Sparse 0x00000003
+	hexToField("00000000", header.Checksum[:])
+	copy(header.UniqueId[:], uuidgenBytes())
+
+	header.addChecksum()
+
+	// Fill the sparse header
+	header2 := VHDExtraHeader{}
+	hexToField(VHD_DYN_COOKIE, header2.Cookie[:])
+	hexToField("ffffffffffffffff", header2.DataOffset[:])
+	// header size + sparse header size
+	binary.BigEndian.PutUint64(header2.TableOffset[:], uint64(VHD_EXTRA_HEADER_SIZE+VHD_HEADER_SIZE))
+	hexToField("00010000", header2.HeaderVersion[:])
+	maxTableSize := uint32(size / (VHD_BLOCK_SIZE))
+	binary.BigEndian.PutUint32(header2.MaxTableEntries[:], maxTableSize)
+	binary.BigEndian.PutUint32(header2.BlockSize[:], VHD_BLOCK_SIZE)
+	binary.BigEndian.PutUint32(header2.ParentTimestamp[:], uint32(0))
+	header2.addChecksum()
+
+	f, err := os.Create(name)
+	check(err)
+	defer f.Close()
+
+	binary.Write(f, binary.BigEndian, header)
+	binary.Write(f, binary.BigEndian, header2)
+	buf := make([]byte, 32)
+	hexToField("ffffffff", buf[:])
+	bte := uint32(0)
+	for bte = 0; bte < maxTableSize; bte += 1 {
+		binary.Write(f, binary.BigEndian, buf)
+	}
+	fmt.Printf("%d BAT entries written", bte)
+	binary.Write(f, binary.BigEndian, header)
 }
 
 func PrintVHDHeaders(f *os.File) {

@@ -5,5 +5,5 @@ import (
 )
 
 func main() {
-	vhd.CreateSparseVHD(1024*1024, "test.vhd")
+	vhd.CreateSparseVHD(40*1024*1024, "test.vhd")
 }

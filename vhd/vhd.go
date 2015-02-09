@@ -20,6 +20,7 @@ const VHD_CREATOR_HOST_OS = "5769326B"    // Win2k
 const VHD_BLOCK_SIZE = 2 * 1024 * 1024    // 2MB
 const VHD_HEADER_SIZE = 512
 const SECTOR_SIZE = 512
+const FOURK_SECTOR_SIZE = 4096
 const VHD_EXTRA_HEADER_SIZE = 1024
 
 func fmtField(name, value string) {
@@ -416,15 +417,18 @@ func CreateSparseVHD(size uint64, name string) {
 	binary.Write(f, binary.BigEndian, header)
 	binary.Write(f, binary.BigEndian, header2)
 
-	// Write BAT entries
-	for count := uint32(0); count < maxTableSize; count += 1 {
-		f.Write(bytes.Repeat([]byte{0xff}, 4))
+	/*
+		Write BAT entries
+		The BAT is always extended to a sector (4K) boundary
+		1536 = 512 + 1024 (the VHD Header + VHD Sparse header size)
+	*/
+	for count := uint32(0); count < (FOURK_SECTOR_SIZE - 1536); count += 1 {
+		f.Write([]byte{0xff})
 	}
 
-	// The BAT is always extended to a sector boundary
-	// Windows creates 8K VHDs by default
-	for count := uint32(0); count < (1536 - maxTableSize); count += 1 {
-		f.Write(bytes.Repeat([]byte{0x0}, 4))
+	/* Windows creates 8K VHDs by default */
+	for i := 0; i < (FOURK_SECTOR_SIZE - VHD_HEADER_SIZE); i += 1 {
+		f.Write([]byte{0x0})
 	}
 
 	binary.Write(f, binary.BigEndian, header)

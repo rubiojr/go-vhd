@@ -6,9 +6,10 @@ import (
 	"github.com/codegangsta/cli"
 	"github.com/dustin/go-humanize"
 	"os"
+	"strconv"
 )
 
-func createVHD(file, size string) {
+func createVHD(file, size string, options vhd.VHDOptions) {
 
 	isize, err := humanize.ParseBytes(size)
 
@@ -16,7 +17,7 @@ func createVHD(file, size string) {
 		panic(err)
 	}
 
-	vhd.CreateSparseVHD(uint64(isize), file)
+	vhd.CreateSparseVHD(uint64(isize), file, options)
 	fmt.Printf("File %s (%s) created\n", file, humanize.IBytes(uint64(isize)))
 }
 
@@ -49,7 +50,35 @@ func main() {
 						app.Name)
 					os.Exit(1)
 				}
-				createVHD(c.Args()[0], c.Args()[1])
+
+				opts := vhd.VHDOptions{}
+
+				tstamp := c.String("timestamp")
+				if tstamp != "" {
+					itstamp, err := strconv.Atoi(tstamp)
+					if err != nil {
+						panic(err)
+					}
+					opts.Timestamp = int64(itstamp)
+				}
+
+				uuid := c.String("uuid")
+				if uuid != "" {
+					opts.UUID = uuid
+				}
+				createVHD(c.Args()[0], c.Args()[1], opts)
+			},
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "uuid",
+					Value: "",
+					Usage: "Set the UUID of the VHD header",
+				},
+				cli.StringFlag{
+					Name:  "timestamp",
+					Value: "",
+					Usage: "Set the timestamp of the VHD header (UNIX time format)",
+				},
 			},
 		},
 		{

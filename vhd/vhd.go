@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -59,6 +60,14 @@ func uuid(a []byte) string {
 		a[6:8],
 		a[8:10],
 		a[10:16])
+}
+
+func uuidToBytes(uuid string) []byte {
+	s := strings.Replace(uuid, "-", "", -1)
+	h, err := hex.DecodeString(s)
+	check(err)
+
+	return h
 }
 
 func calculateCHS(ts uint64) []uint {
@@ -367,15 +376,26 @@ func hexToField(hexs string, field []byte) {
 	copy(field, h)
 }
 
-func CreateSparseVHD(size uint64, name string) {
+type VHDOptions struct {
+	UUID      string
+	Timestamp int64
+}
+
+func CreateSparseVHD(size uint64, name string, options VHDOptions) {
 	header := VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
 	hexToField("00010000", header.FileFormatVersion[:])
 	hexToField("0000000000000200", header.DataOffset[:])
 
-	t := uint32(time.Now().Unix() - 946684800)
-	binary.BigEndian.PutUint32(header.Timestamp[:], t)
+	// LOL Y2038
+	if options.Timestamp != 0 {
+		binary.BigEndian.PutUint32(header.Timestamp[:], uint32(options.Timestamp))
+	} else {
+		t := uint32(time.Now().Unix() - 946684800)
+		binary.BigEndian.PutUint32(header.Timestamp[:], t)
+	}
+
 	hexToField(VHD_CREATOR_APP, header.CreatorApplication[:])
 	hexToField(VHD_CREATOR_HOST_OS, header.CreatorHostOS[:])
 	binary.BigEndian.PutUint64(header.OriginalSize[:], size)
@@ -391,7 +411,12 @@ func CreateSparseVHD(size uint64, name string) {
 
 	hexToField("00000003", header.DiskType[:]) // Sparse 0x00000003
 	hexToField("00000000", header.Checksum[:])
-	copy(header.UniqueId[:], uuidgenBytes())
+
+	if options.UUID != "" {
+		copy(header.UniqueId[:], uuidToBytes(options.UUID))
+	} else {
+		copy(header.UniqueId[:], uuidgenBytes())
+	}
 
 	header.addChecksum()
 

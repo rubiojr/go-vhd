@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+tmpfile=$(mktemp)
+./script/build.sh 2>/dev/null
+./govhd create --uuid 26ff4682-ac0c-491c-8f3f-6c503a942c79 --timestamp 1 $tmpfile 10M > /dev/null
+
+trap "rm -f $tmpfile" EXIT
+md5=$(md5sum $tmpfile | awk '{print $1}')
+
+if [ "$md5" != "20dc9bdfcba5e82918a31a443ad13925" ]; then
+  echo Failed && exit 1
+else
+  echo OK
+fi

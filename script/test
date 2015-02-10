@@ -2,14 +2,21 @@
 set -e
 
 tmpfile=$(mktemp)
-./script/build.sh 2>/dev/null
+trap "rm -f $tmpfile" EXIT
+
+./script/build.sh || (echo Build failed! && exit 1)
 ./govhd create --uuid 26ff4682-ac0c-491c-8f3f-6c503a942c79 --timestamp 1 $tmpfile 10M > /dev/null
 
-trap "rm -f $tmpfile" EXIT
 md5=$(md5sum $tmpfile | awk '{print $1}')
-
 if [ "$md5" != "20dc9bdfcba5e82918a31a443ad13925" ]; then
-  echo Failed && exit 1
+  echo "create: Fail!" && exit 1
 else
-  echo OK
+  echo "create: OK"
+fi
+
+info=$(./govhd info $tmpfile | md5sum)
+if echo $info | grep -q "6cbcd11a605c08986506836d51406f64"; then
+  echo "info: OK"
+else
+  echo "info: Fail!"
 fi

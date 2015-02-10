@@ -17,7 +17,7 @@ func createVHD(file, size string, options vhd.VHDOptions) {
 		panic(err)
 	}
 
-	vhd.CreateSparseVHD(uint64(isize), file, options)
+	vhd.VHDCreateSparse(uint64(isize), file, options)
 	fmt.Printf("File %s (%s) created\n", file, humanize.IBytes(uint64(isize)))
 }
 
@@ -29,7 +29,8 @@ func vhdInfo(vhdFile string) {
 	}
 	defer f.Close()
 
-	vhd.PrintVHDHeaders(f)
+	vhd := vhd.FromFile(f)
+	vhd.PrintInfo()
 }
 
 func main() {

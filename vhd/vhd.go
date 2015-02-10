@@ -23,6 +23,12 @@ const SECTOR_SIZE = 512
 const FOURK_SECTOR_SIZE = 4096
 const VHD_EXTRA_HEADER_SIZE = 1024
 
+// A VDH file
+type VHD struct {
+	Footer      VHDHeader
+	ExtraHeader VHDExtraHeader
+}
+
 // VHD Header
 type VHDHeader struct {
 	Cookie             [8]byte
@@ -142,7 +148,7 @@ func (h *VHDHeader) addChecksum() {
 	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
 }
 
-func CreateSparseVHD(size uint64, name string, options VHDOptions) {
+func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 	header := VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
@@ -218,18 +224,116 @@ func CreateSparseVHD(size uint64, name string, options VHDOptions) {
 	}
 
 	binary.Write(f, binary.BigEndian, header)
+
+	return VHD{
+		Footer:      header,
+		ExtraHeader: header2,
+	}
 }
 
-func PrintVHDHeaders(f *os.File) {
-	vhdHeader := make([]byte, 512)
-	_, err := f.Read(vhdHeader)
-	check(err)
-	header := readVHDHeader(vhdHeader)
+/*
+ * VHD
+ */
 
-	if header.DiskType[3] == 0x3 || header.DiskType[3] == 0x04 {
-		fmt.Println("\nReading dynamic/differential VHD header...")
-		readVHDExtraHeader(f)
+func FromFile(f *os.File) (vhd VHD) {
+	vhd = VHD{}
+	vhd.Footer = readVHDHeader(f)
+	vhd.ExtraHeader = readVHDExtraHeader(f)
+
+	return vhd
+}
+
+func (vhd *VHD) PrintInfo() {
+	fmt.Println("\nVHD footer")
+	fmt.Println("==========")
+	vhd.PrintFooter()
+
+	if vhd.Footer.DiskType[3] == 0x3 || vhd.Footer.DiskType[3] == 0x04 {
+		fmt.Println("\nVHD sparse/differential header")
+		fmt.Println("===============================")
+		vhd.PrintExtraHeader()
 	}
+}
+
+func (vhd *VHD) PrintExtraHeader() {
+	header := vhd.ExtraHeader
+
+	fmtField("Cookie", fmt.Sprintf("%s (%s)",
+		hexs(header.Cookie[:]), header.CookieString()))
+	fmtField("Data offset", hexs(header.DataOffset[:]))
+	fmtField("Table offset", hexs(header.TableOffset[:]))
+	fmtField("Header version", hexs(header.HeaderVersion[:]))
+	fmtField("Max table entries", hexs(header.MaxTableEntries[:]))
+	fmtField("Block size", hexs(header.BlockSize[:]))
+	fmtField("Checksum", hexs(header.Checksum[:]))
+	fmtField("Parent UUID", uuid(header.ParentUUID[:]))
+
+	// Seconds since January 1, 1970 12:00:00 AM in UTC/GMT.
+	// 946684800 = January 1, 2000 12:00:00 AM in UTC/GMT.
+	tstamp := binary.BigEndian.Uint32(header.ParentTimestamp[:])
+	t := time.Unix(int64(946684800+tstamp), 0)
+	fmtField("Parent timestamp", fmt.Sprintf("%s", t))
+
+	fmtField("Reserved", hexs(header.Reserved[:]))
+	parentName := utf16BytesToString(header.ParentUnicodeName[:],
+		binary.BigEndian)
+	fmtField("Parent Name", parentName)
+	// Parent locator entries ignored since it's a dynamic disk
+	sum := 0
+	for _, b := range header.Reserved2 {
+		sum += int(b)
+	}
+	fmtField("Reserved2", strconv.Itoa(sum))
+}
+
+func (vhd *VHD) PrintFooter() {
+	header := vhd.Footer
+
+	//fmtField("Cookie", string(header.Cookie[:]))
+	fmtField("Cookie", fmt.Sprintf("%s (%s)",
+		hexs(header.Cookie[:]), string(header.Cookie[:])))
+	fmtField("Features", hexs(header.Features[:]))
+	fmtField("File format version", hexs(header.FileFormatVersion[:]))
+
+	dataOffset := binary.BigEndian.Uint64(header.DataOffset[:])
+	fmtField("Data offset",
+		fmt.Sprintf("%s (%d bytes)", hexs(header.DataOffset[:]), dataOffset))
+
+	//// Seconds since January 1, 1970 12:00:00 AM in UTC/GMT.
+	//// 946684800 = January 1, 2000 12:00:00 AM in UTC/GMT.
+	t := time.Unix(int64(946684800+binary.BigEndian.Uint32(header.Timestamp[:])), 0)
+	fmtField("Timestamp", fmt.Sprintf("%s", t))
+
+	fmtField("Creator application", string(header.CreatorApplication[:]))
+	fmtField("Creator version", hexs(header.CreatorVersion[:]))
+	fmtField("Creator OS", string(header.CreatorHostOS[:]))
+
+	originalSize := binary.BigEndian.Uint64(header.OriginalSize[:])
+	fmtField("Original size",
+		fmt.Sprintf("%s ( %d bytes )", hexs(header.OriginalSize[:]), originalSize))
+
+	currentSize := binary.BigEndian.Uint64(header.OriginalSize[:])
+	fmtField("Current size",
+		fmt.Sprintf("%s ( %d bytes )", hexs(header.CurrentSize[:]), currentSize))
+
+	cilinders := int64(binary.BigEndian.Uint16(header.DiskGeometry[:2]))
+	heads := int64(header.DiskGeometry[2])
+	sectors := int64(header.DiskGeometry[3])
+	dsize := cilinders * heads * sectors * 512
+	fmtField("Disk geometry",
+		fmt.Sprintf("%s (c: %d, h: %d, s: %d) (%d bytes)",
+			hexs(header.DiskGeometry[:]),
+			cilinders,
+			heads,
+			sectors,
+			dsize))
+
+	fmtField("Disk type",
+		fmt.Sprintf("%s (%s)", hexs(header.DiskType[:]), header.DiskTypeStr()))
+
+	fmtField("Checksum", hexs(header.Checksum[:]))
+	fmtField("UUID", uuid(header.UniqueId[:]))
+	fmtField("Saved state", fmt.Sprintf("%d", header.SavedState[0]))
 }
 
 /*
@@ -281,96 +385,6 @@ func calculateCHS(ts uint64) []uint {
 	return ret
 }
 
-func readVHDExtraHeader(f *os.File) {
-	vhdHeader := make([]byte, 1024)
-	_, err := f.Read(vhdHeader)
-	check(err)
-
-	var header VHDExtraHeader
-	binary.Read(bytes.NewBuffer(vhdHeader[:]), binary.BigEndian, &header)
-
-	fmtField("Cookie", fmt.Sprintf("%s (%s)",
-		hexs(header.Cookie[:]), header.CookieString()))
-	fmtField("Data offset", hexs(header.DataOffset[:]))
-	fmtField("Table offset", hexs(header.TableOffset[:]))
-	fmtField("Header version", hexs(header.HeaderVersion[:]))
-	fmtField("Max table entries", hexs(header.MaxTableEntries[:]))
-	fmtField("Block size", hexs(header.BlockSize[:]))
-	fmtField("Checksum", hexs(header.Checksum[:]))
-	fmtField("Parent UUID", uuid(header.ParentUUID[:]))
-
-	// Seconds since January 1, 1970 12:00:00 AM in UTC/GMT.
-	// 946684800 = January 1, 2000 12:00:00 AM in UTC/GMT.
-	tstamp := binary.BigEndian.Uint32(header.ParentTimestamp[:])
-	t := time.Unix(int64(946684800+tstamp), 0)
-	fmtField("Parent timestamp", fmt.Sprintf("%s", t))
-
-	fmtField("Reserved", hexs(header.Reserved[:]))
-	parentName := utf16BytesToString(header.ParentUnicodeName[:],
-		binary.BigEndian)
-	fmtField("Parent Name", parentName)
-	// Parent locator entries ignored since it's a dynamic disk
-	sum := 0
-	for _, b := range header.Reserved2 {
-		sum += int(b)
-	}
-	fmtField("Reserved2", strconv.Itoa(sum))
-}
-
-func readVHDHeader(vhdHeader []byte) VHDHeader {
-
-	var header VHDHeader
-	binary.Read(bytes.NewBuffer(vhdHeader[:]), binary.BigEndian, &header)
-
-	//fmtField("Cookie", string(header.Cookie[:]))
-	fmtField("Cookie", fmt.Sprintf("%s (%s)",
-		hexs(header.Cookie[:]), string(header.Cookie[:])))
-	fmtField("Features", hexs(header.Features[:]))
-	fmtField("File format version", hexs(header.FileFormatVersion[:]))
-
-	dataOffset := binary.BigEndian.Uint64(header.DataOffset[:])
-	fmtField("Data offset",
-		fmt.Sprintf("%s (%d bytes)", hexs(header.DataOffset[:]), dataOffset))
-
-	//// Seconds since January 1, 1970 12:00:00 AM in UTC/GMT.
-	//// 946684800 = January 1, 2000 12:00:00 AM in UTC/GMT.
-	t := time.Unix(int64(946684800+binary.BigEndian.Uint32(header.Timestamp[:])), 0)
-	fmtField("Timestamp", fmt.Sprintf("%s", t))
-
-	fmtField("Creator application", string(header.CreatorApplication[:]))
-	fmtField("Creator version", hexs(header.CreatorVersion[:]))
-	fmtField("Creator OS", string(header.CreatorHostOS[:]))
-
-	originalSize := binary.BigEndian.Uint64(header.OriginalSize[:])
-	fmtField("Original size",
-		fmt.Sprintf("%s ( %d bytes )", hexs(header.OriginalSize[:]), originalSize))
-
-	currentSize := binary.BigEndian.Uint64(header.OriginalSize[:])
-	fmtField("Current size",
-		fmt.Sprintf("%s ( %d bytes )", hexs(header.CurrentSize[:]), currentSize))
-
-	cilinders := int64(binary.BigEndian.Uint16(header.DiskGeometry[:2]))
-	heads := int64(header.DiskGeometry[2])
-	sectors := int64(header.DiskGeometry[3])
-	dsize := cilinders * heads * sectors * 512
-	fmtField("Disk geometry",
-		fmt.Sprintf("%s (c: %d, h: %d, s: %d) (%d bytes)",
-			hexs(header.DiskGeometry[:]),
-			cilinders,
-			heads,
-			sectors,
-			dsize))
-
-	fmtField("Disk type",
-		fmt.Sprintf("%s (%s)", hexs(header.DiskType[:]), header.DiskTypeStr()))
-
-	fmtField("Checksum", hexs(header.Checksum[:]))
-	fmtField("UUID", uuid(header.UniqueId[:]))
-	fmtField("Saved state", fmt.Sprintf("%d", header.SavedState[0]))
-
-	return header
-}
-
 func hexToField(hexs string, field []byte) {
 	h, err := hex.DecodeString(hexs)
 	check(err)
@@ -381,4 +395,24 @@ func hexToField(hexs string, field []byte) {
 // Return the number of blocks in the disk, diskSize in bytes
 func getMaxTableEntries(diskSize uint64) uint64 {
 	return diskSize * (2 * 1024 * 1024) // block size is 2M
+}
+
+func readVHDExtraHeader(f *os.File) (header VHDExtraHeader) {
+	buff := make([]byte, 1024)
+	_, err := f.Read(buff)
+	check(err)
+
+	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
+
+	return header
+}
+
+func readVHDHeader(f *os.File) (header VHDHeader) {
+	buff := make([]byte, 512)
+	_, err := f.Read(buff)
+	check(err)
+
+	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
+
+	return header
 }

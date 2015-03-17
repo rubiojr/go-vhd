@@ -4,7 +4,7 @@ set -e
 tmpfile=$(mktemp)
 trap "rm -f $tmpfile" EXIT
 
-./script/build.sh || (echo Build failed! && exit 1)
+./script/build || (echo Build failed! && exit 1)
 ./govhd create --uuid 26ff4682-ac0c-491c-8f3f-6c503a942c79 --timestamp 1 $tmpfile 10M > /dev/null
 
 md5=$(md5sum $tmpfile | awk '{print $1}')

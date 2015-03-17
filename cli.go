@@ -49,7 +49,8 @@ func vhdInfo(vhdFile string) {
 
 func main() {
 	app := cli.NewApp()
-	app.Name = "govhd"
+	app.Version = PKG_VERSION
+	app.Name = PKG_NAME
 	app.Usage = "Library and tool to manipulate VHD images"
 	app.Author = "Sergio Rubio"
 	app.Email = "rubiojr@frameos.org"

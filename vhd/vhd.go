@@ -237,7 +237,7 @@ func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 
 func FromFile(f *os.File) (vhd VHD) {
 	vhd = VHD{}
-	vhd.Footer = readVHDHeader(f)
+	vhd.Footer = readVHDFooter(f)
 	vhd.ExtraHeader = readVHDExtraHeader(f)
 
 	return vhd
@@ -399,7 +399,20 @@ func getMaxTableEntries(diskSize uint64) uint64 {
 
 func readVHDExtraHeader(f *os.File) (header VHDExtraHeader) {
 	buff := make([]byte, 1024)
-	_, err := f.Read(buff)
+	_, err := f.ReadAt(buff, 512)
+	check(err)
+
+	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
+
+	return header
+}
+
+func readVHDFooter(f *os.File) (header VHDHeader) {
+	info, err := f.Stat()
+	check(err)
+
+	buff := make([]byte, 512)
+	_, err = f.ReadAt(buff, info.Size() - 512)
 	check(err)
 
 	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
@@ -409,7 +422,7 @@ func readVHDExtraHeader(f *os.File) (header VHDExtraHeader) {
 
 func readVHDHeader(f *os.File) (header VHDHeader) {
 	buff := make([]byte, 512)
-	_, err := f.Read(buff)
+	_, err := f.ReadAt(buff, 0)
 	check(err)
 
 	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)

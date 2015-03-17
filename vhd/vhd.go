@@ -148,6 +148,43 @@ func (h *VHDHeader) addChecksum() {
 	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
 }
 
+func RawToFixed(f *os.File) {
+	info, err := f.Stat()
+	check(err)
+	size := uint64(info.Size())
+
+	header := VHDHeader{}
+	hexToField(VHD_COOKIE, header.Cookie[:])
+	hexToField("00000002", header.Features[:])
+	hexToField("00010000", header.FileFormatVersion[:])
+	hexToField("ffffffffffffffff", header.DataOffset[:])
+
+	t := uint32(time.Now().Unix() - 946684800)
+	binary.BigEndian.PutUint32(header.Timestamp[:], t)
+
+	hexToField(VHD_CREATOR_APP, header.CreatorApplication[:])
+	hexToField(VHD_CREATOR_HOST_OS, header.CreatorHostOS[:])
+	binary.BigEndian.PutUint64(header.OriginalSize[:], size)
+	binary.BigEndian.PutUint64(header.CurrentSize[:], size)
+
+	// total sectors = disk size / 512b sector size
+	totalSectors := math.Floor(float64(size / 512))
+	// [C, H, S]
+	geometry := calculateCHS(uint64(totalSectors))
+	binary.BigEndian.PutUint16(header.DiskGeometry[:2], uint16(geometry[0]))
+	header.DiskGeometry[2] = uint8(geometry[1])
+	header.DiskGeometry[3] = uint8(geometry[2])
+
+	hexToField("00000002", header.DiskType[:]) // Fixed 0x00000002
+	hexToField("00000000", header.Checksum[:])
+
+	copy(header.UniqueId[:], uuidgenBytes())
+
+	header.addChecksum()
+
+	binary.Write(f, binary.BigEndian, header)
+}
+
 func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 	header := VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
@@ -412,7 +449,7 @@ func readVHDFooter(f *os.File) (header VHDHeader) {
 	check(err)
 
 	buff := make([]byte, 512)
-	_, err = f.ReadAt(buff, info.Size() - 512)
+	_, err = f.ReadAt(buff, info.Size()-512)
 	check(err)
 
 	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)

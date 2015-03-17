@@ -6,7 +6,9 @@ import (
 	"github.com/codegangsta/cli"
 	"github.com/dustin/go-humanize"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 func createVHD(file, size string, options vhd.VHDOptions) {
@@ -19,6 +21,16 @@ func createVHD(file, size string, options vhd.VHDOptions) {
 
 	vhd.VHDCreateSparse(uint64(isize), file, options)
 	fmt.Printf("File %s (%s) created\n", file, humanize.IBytes(uint64(isize)))
+}
+
+func rawToFixed(file string) {
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		panic(err)
+	}
+	vhd.RawToFixed(f)
+	f.Close()
+	os.Rename(file, strings.Replace(file, filepath.Ext(file), ".vhd", -1))
 }
 
 func vhdInfo(vhdFile string) {
@@ -93,6 +105,19 @@ func main() {
 					os.Exit(1)
 				}
 				vhdInfo(c.Args()[0])
+			},
+		},
+		{
+			Name:  "raw2fixed",
+			Usage: "Convert from RAW to VHD fixed",
+			Action: func(c *cli.Context) {
+				if len(c.Args()) != 1 {
+					println("Missing command arguments.\n")
+					fmt.Printf("Usage: %s info <file-path>\n",
+						app.Name)
+					os.Exit(1)
+				}
+				rawToFixed(c.Args()[0])
 			},
 		},
 	}

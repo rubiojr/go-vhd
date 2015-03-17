@@ -43,12 +43,12 @@ case $CMD in
     srcdeb
     ;;
   deps)
-    rm -rf vendor/src
+    rm -rf $BASE_PATH/vendor/src
     GOBIN=$PWD/vendor/bin GOPATH=$PWD/vendor go get
-    rm -rf vendor/pkg
-    rm -rf vendor/bin
-    find vendor/src -type d -name '.git' -o -name '.hg' | xargs rm -rf
-    find vendor/src -type f -name '.gitignore' -o -name '.hgignore' | xargs rm
+    rm -rf $BASE_PATH/vendor/pkg
+    rm -rf $BASE_PATH/vendor/bin
+    find $BASE_PATH/vendor/src -type d -name '.git' -o -name '.hg' | xargs rm -rf
+    find $BASE_PATH/vendor/src -type f -name '.gitignore' -o -name '.hgignore' | xargs rm
     ;;
   format)
     gofmt -s -w .

@@ -90,7 +90,7 @@ The following dependencies are required/recommended:
 apt-get install build-essential debuild dpkg-dev devscripts
 ```
 
-Create the source deb, that will be move to ~/debian/go-vhd:
+Create the source deb, that will be moved to `~/debian/go-vhd`:
 
 ```
 make srcdeb

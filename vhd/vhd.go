@@ -148,7 +148,7 @@ func (h *VHDHeader) addChecksum() {
 	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
 }
 
-func RawToFixed(f *os.File) {
+func RawToFixed(f *os.File, options *VHDOptions) {
 	info, err := f.Stat()
 	check(err)
 	size := uint64(info.Size())
@@ -159,8 +159,13 @@ func RawToFixed(f *os.File) {
 	hexToField("00010000", header.FileFormatVersion[:])
 	hexToField("ffffffffffffffff", header.DataOffset[:])
 
-	t := uint32(time.Now().Unix() - 946684800)
-	binary.BigEndian.PutUint32(header.Timestamp[:], t)
+	// LOL Y2038
+	if options.Timestamp != 0 {
+		binary.BigEndian.PutUint32(header.Timestamp[:], uint32(options.Timestamp))
+	} else {
+		t := uint32(time.Now().Unix() - 946684800)
+		binary.BigEndian.PutUint32(header.Timestamp[:], t)
+	}
 
 	hexToField(VHD_CREATOR_APP, header.CreatorApplication[:])
 	hexToField(VHD_CREATOR_HOST_OS, header.CreatorHostOS[:])
@@ -178,7 +183,11 @@ func RawToFixed(f *os.File) {
 	hexToField("00000002", header.DiskType[:]) // Fixed 0x00000002
 	hexToField("00000000", header.Checksum[:])
 
-	copy(header.UniqueId[:], uuidgenBytes())
+	if options.UUID != "" {
+		copy(header.UniqueId[:], uuidToBytes(options.UUID))
+	} else {
+		copy(header.UniqueId[:], uuidgenBytes())
+	}
 
 	header.addChecksum()
 

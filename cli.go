@@ -23,13 +23,13 @@ func createVHD(file, size string, options vhd.VHDOptions) {
 	fmt.Printf("File %s (%s) created\n", file, humanize.IBytes(uint64(isize)))
 }
 
-func rawToFixed(file string) {
+func rawToFixed(file string, options *vhd.VHDOptions) {
 	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		fmt.Printf("Error opening file %s: %s\n", file, err)
 		os.Exit(1)
 	}
-	vhd.RawToFixed(f)
+	vhd.RawToFixed(f, options)
 	f.Close()
 	os.Rename(file, strings.Replace(file, filepath.Ext(file), ".vhd", -1))
 }
@@ -111,15 +111,43 @@ func main() {
 		},
 		{
 			Name:  "raw2fixed",
-			Usage: "Convert from RAW to VHD fixed",
+			Usage: "Convert a RAW image to a fixed VHD",
 			Action: func(c *cli.Context) {
 				if len(c.Args()) != 1 {
 					println("Missing command arguments.\n")
-					fmt.Printf("Usage: %s info <file-path>\n",
+					fmt.Printf("Usage: %s raw2fixed <file-path>\n",
 						app.Name)
 					os.Exit(1)
 				}
-				rawToFixed(c.Args()[0])
+
+				opts := vhd.VHDOptions{}
+
+				tstamp := c.String("timestamp")
+				if tstamp != "" {
+					itstamp, err := strconv.Atoi(tstamp)
+					if err != nil {
+						panic(err)
+					}
+					opts.Timestamp = int64(itstamp)
+				}
+
+				uuid := c.String("uuid")
+				if uuid != "" {
+					opts.UUID = uuid
+				}
+				rawToFixed(c.Args()[0], &opts)
+			},
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "uuid",
+					Value: "",
+					Usage: "Set the UUID of the VHD header",
+				},
+				cli.StringFlag{
+					Name:  "timestamp",
+					Value: "",
+					Usage: "Set the timestamp of the VHD header (UNIX time format)",
+				},
 			},
 		},
 	}

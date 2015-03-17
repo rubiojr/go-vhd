@@ -26,7 +26,8 @@ func createVHD(file, size string, options vhd.VHDOptions) {
 func rawToFixed(file string) {
 	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
-		panic(err)
+		fmt.Printf("Error opening file %s: %s\n", file, err)
+		os.Exit(1)
 	}
 	vhd.RawToFixed(f)
 	f.Close()
@@ -37,7 +38,8 @@ func vhdInfo(vhdFile string) {
 
 	f, err := os.Open(vhdFile)
 	if err != nil {
-		panic(err)
+		fmt.Printf("Error opening file %s: %s\n", vhdFile, err)
+		os.Exit(1)
 	}
 	defer f.Close()
 

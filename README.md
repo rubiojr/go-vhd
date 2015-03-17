@@ -12,7 +12,6 @@ Go package and CLI to work with VHD images (https://technet.microsoft.com/en-us/
 govhd create foo.vhd 80GiB
 ```
 
-
 ```
 govhd info foo.vhd
 Cookie:                  0x636f6e6563746978 (conectix)
@@ -74,3 +73,13 @@ Checksum:                0xffffe70b
 UUID:                    54d36115-6bd7-5237-615a-b53a3a912557
 Saved state:             0
 ```
+
+## Building
+
+You'll need golang installed. Tested with go >= 1.2.
+
+```
+make
+```
+
+### Creating a Debian source package

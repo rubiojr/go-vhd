@@ -1,6 +1,6 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: push-mtr 
-Source: https://github.com/rubiojr/push-mtr
+Upstream-Name: go-vhd
+Source: https://github.com/rubiojr/go-vhd
 
 Files: *
 Copyright: 2015 <rubiojr@frameos.org>

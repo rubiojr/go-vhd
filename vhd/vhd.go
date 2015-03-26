@@ -286,7 +286,7 @@ func RawToDynamic(f *os.File, options *HeaderOptions) (vhd VHD) {
 	//lastReadZero := false
 	//buf := make([]byte, 512)
 	//for {
-  //  // write bitmap
+	//  // write bitmap
 	//	f.Write([512]byte)
 	//	_, err := f.Read(buf)
 	//	if err == io.EOF {
@@ -496,7 +496,7 @@ func readFooter(f *os.File) (header Header) {
 }
 
 func zeroed(buf []byte) bool {
-	for _, b := range(buf) {
+	for _, b := range buf {
 		if b != 0 {
 			return false
 		}

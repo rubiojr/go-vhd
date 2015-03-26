@@ -26,12 +26,12 @@ const VHD_EXTRA_HEADER_SIZE = 1024
 
 // A VDH file
 type VHD struct {
-	Footer      VHDHeader
-	ExtraHeader VHDExtraHeader
+	Footer      Header
+	ExtraHeader DynamicHeader
 }
 
 // VHD Header
-type VHDHeader struct {
+type Header struct {
 	Cookie             [8]byte
 	Features           [4]byte
 	FileFormatVersion  [4]byte
@@ -51,7 +51,7 @@ type VHDHeader struct {
 }
 
 // VHD extra header, for dynamic and differential disks
-type VHDExtraHeader struct {
+type DynamicHeader struct {
 	Cookie              [8]byte
 	DataOffset          [8]byte
 	TableOffset         [8]byte
@@ -81,15 +81,15 @@ type HeaderOptions struct {
 }
 
 /*
- *  VHDExtraHeader methods
+ *  DynamicHeader methods
  */
 
-func (header *VHDExtraHeader) CookieString() string {
+func (header *DynamicHeader) CookieString() string {
 	return string(header.Cookie[:])
 }
 
 // Calculate and add the VHD dynamic/differential header checksum
-func (h *VHDExtraHeader) addChecksum() {
+func (h *DynamicHeader) addChecksum() {
 	buffer := new(bytes.Buffer)
 	binary.Write(buffer, binary.BigEndian, h)
 	checksum := 0
@@ -103,10 +103,10 @@ func (h *VHDExtraHeader) addChecksum() {
 }
 
 /*
- * VHDHeader methods
+ * Header methods
  */
 
-func (h *VHDHeader) DiskTypeStr() (dt string) {
+func (h *Header) DiskTypeStr() (dt string) {
 	switch h.DiskType[3] {
 	case 0x00:
 		dt = "None"
@@ -130,13 +130,13 @@ func (h *VHDHeader) DiskTypeStr() (dt string) {
 }
 
 // Return the timestamp of the header
-func (h *VHDHeader) TimestampTime() time.Time {
+func (h *Header) TimestampTime() time.Time {
 	tstamp := binary.BigEndian.Uint32(h.Timestamp[:])
 	return time.Unix(int64(946684800+tstamp), 0)
 }
 
 // Calculate and add the VHD header checksum
-func (h *VHDHeader) addChecksum() {
+func (h *Header) addChecksum() {
 	buffer := new(bytes.Buffer)
 	binary.Write(buffer, binary.BigEndian, h)
 	checksum := 0
@@ -158,8 +158,8 @@ func RawToFixed(f *os.File, options *HeaderOptions) {
 	binary.Write(f, binary.BigEndian, header)
 }
 
-func NewHeader(size uint64, options *HeaderOptions) VHDHeader {
-	header := VHDHeader{}
+func NewHeader(size uint64, options *HeaderOptions) Header {
+	header := Header{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
 	hexToField("00010000", header.FileFormatVersion[:])
@@ -200,9 +200,9 @@ func NewHeader(size uint64, options *HeaderOptions) VHDHeader {
 	return header
 }
 
-func NewDynamicHeader(size uint64) VHDExtraHeader {
+func NewDynamicHeader(size uint64) DynamicHeader {
 	// Fill the sparse header
-	header := VHDExtraHeader{}
+	header := DynamicHeader{}
 	hexToField(VHD_DYN_COOKIE, header.Cookie[:])
 	hexToField("ffffffffffffffff", header.DataOffset[:])
 	// header size + sparse header size
@@ -312,8 +312,8 @@ func RawToDynamic(f *os.File, options *HeaderOptions) (vhd VHD) {
 
 func FromFile(f *os.File) (vhd VHD) {
 	vhd = VHD{}
-	vhd.Footer = readVHDFooter(f)
-	vhd.ExtraHeader = readVHDExtraHeader(f)
+	vhd.Footer = readFooter(f)
+	vhd.ExtraHeader = readDynamicHeader(f)
 
 	return vhd
 }
@@ -472,7 +472,7 @@ func getMaxTableEntries(diskSize uint64) uint64 {
 	return diskSize * (2 * 1024 * 1024) // block size is 2M
 }
 
-func readVHDExtraHeader(f *os.File) (header VHDExtraHeader) {
+func readDynamicHeader(f *os.File) (header DynamicHeader) {
 	buff := make([]byte, 1024)
 	_, err := f.ReadAt(buff, 512)
 	check(err)
@@ -482,7 +482,7 @@ func readVHDExtraHeader(f *os.File) (header VHDExtraHeader) {
 	return header
 }
 
-func readVHDFooter(f *os.File) (header VHDHeader) {
+func readFooter(f *os.File) (header Header) {
 	info, err := f.Stat()
 	check(err)
 
@@ -504,7 +504,7 @@ func zeroed(buf []byte) bool {
 	return true
 }
 
-func readVHDHeader(f *os.File) (header VHDHeader) {
+func readHeader(f *os.File) (header Header) {
 	buff := make([]byte, 512)
 	_, err := f.ReadAt(buff, 0)
 	check(err)

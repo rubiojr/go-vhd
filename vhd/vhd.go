@@ -219,7 +219,7 @@ func NewDynamicHeader(size uint64) DynamicHeader {
 	return header
 }
 
-func VHDCreateSparse(size uint64, name string, options *HeaderOptions) VHD {
+func CreateSparse(size uint64, name string, options *HeaderOptions) VHD {
 	header := NewHeader(size, options)
 
 	// Fill the sparse header

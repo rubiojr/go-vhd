@@ -19,7 +19,7 @@ func createVHD(file, size string, options vhd.HeaderOptions) {
 		panic(err)
 	}
 
-	vhd.VHDCreateSparse(uint64(isize), file, &options)
+	vhd.CreateSparse(uint64(isize), file, &options)
 	fmt.Printf("File %s (%s) created\n", file, humanize.IBytes(uint64(isize)))
 }
 

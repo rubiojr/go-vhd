@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	//"io"
 )
 
 const VHD_COOKIE = "636f6e6563746978"     // conectix
@@ -74,7 +75,7 @@ type VHDExtraHeader struct {
 }
 
 // Options for the CreateSparseVHD function
-type VHDOptions struct {
+type HeaderOptions struct {
 	UUID      string
 	Timestamp int64
 }
@@ -148,53 +149,16 @@ func (h *VHDHeader) addChecksum() {
 	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
 }
 
-func RawToFixed(f *os.File, options *VHDOptions) {
+func RawToFixed(f *os.File, options *HeaderOptions) {
 	info, err := f.Stat()
 	check(err)
 	size := uint64(info.Size())
 
-	header := VHDHeader{}
-	hexToField(VHD_COOKIE, header.Cookie[:])
-	hexToField("00000002", header.Features[:])
-	hexToField("00010000", header.FileFormatVersion[:])
-	hexToField("ffffffffffffffff", header.DataOffset[:])
-
-	// LOL Y2038
-	if options.Timestamp != 0 {
-		binary.BigEndian.PutUint32(header.Timestamp[:], uint32(options.Timestamp))
-	} else {
-		t := uint32(time.Now().Unix() - 946684800)
-		binary.BigEndian.PutUint32(header.Timestamp[:], t)
-	}
-
-	hexToField(VHD_CREATOR_APP, header.CreatorApplication[:])
-	hexToField(VHD_CREATOR_HOST_OS, header.CreatorHostOS[:])
-	binary.BigEndian.PutUint64(header.OriginalSize[:], size)
-	binary.BigEndian.PutUint64(header.CurrentSize[:], size)
-
-	// total sectors = disk size / 512b sector size
-	totalSectors := math.Floor(float64(size / 512))
-	// [C, H, S]
-	geometry := calculateCHS(uint64(totalSectors))
-	binary.BigEndian.PutUint16(header.DiskGeometry[:2], uint16(geometry[0]))
-	header.DiskGeometry[2] = uint8(geometry[1])
-	header.DiskGeometry[3] = uint8(geometry[2])
-
-	hexToField("00000002", header.DiskType[:]) // Fixed 0x00000002
-	hexToField("00000000", header.Checksum[:])
-
-	if options.UUID != "" {
-		copy(header.UniqueId[:], uuidToBytes(options.UUID))
-	} else {
-		copy(header.UniqueId[:], uuidgenBytes())
-	}
-
-	header.addChecksum()
-
+	header := NewHeader(size, options)
 	binary.Write(f, binary.BigEndian, header)
 }
 
-func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
+func NewHeader(size uint64, options *HeaderOptions) VHDHeader {
 	header := VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
@@ -233,20 +197,33 @@ func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 
 	header.addChecksum()
 
+	return header
+}
+
+func NewDynamicHeader(size uint64) VHDExtraHeader {
 	// Fill the sparse header
-	header2 := VHDExtraHeader{}
-	hexToField(VHD_DYN_COOKIE, header2.Cookie[:])
-	hexToField("ffffffffffffffff", header2.DataOffset[:])
+	header := VHDExtraHeader{}
+	hexToField(VHD_DYN_COOKIE, header.Cookie[:])
+	hexToField("ffffffffffffffff", header.DataOffset[:])
 	// header size + sparse header size
-	binary.BigEndian.PutUint64(header2.TableOffset[:], uint64(VHD_EXTRA_HEADER_SIZE+VHD_HEADER_SIZE))
-	hexToField("00010000", header2.HeaderVersion[:])
+	binary.BigEndian.PutUint64(header.TableOffset[:], uint64(VHD_EXTRA_HEADER_SIZE+VHD_HEADER_SIZE))
+	hexToField("00010000", header.HeaderVersion[:])
 
 	maxTableSize := uint32(size / (VHD_BLOCK_SIZE))
-	binary.BigEndian.PutUint32(header2.MaxTableEntries[:], maxTableSize)
+	binary.BigEndian.PutUint32(header.MaxTableEntries[:], maxTableSize)
 
-	binary.BigEndian.PutUint32(header2.BlockSize[:], VHD_BLOCK_SIZE)
-	binary.BigEndian.PutUint32(header2.ParentTimestamp[:], uint32(0))
-	header2.addChecksum()
+	binary.BigEndian.PutUint32(header.BlockSize[:], VHD_BLOCK_SIZE)
+	binary.BigEndian.PutUint32(header.ParentTimestamp[:], uint32(0))
+	header.addChecksum()
+
+	return header
+}
+
+func VHDCreateSparse(size uint64, name string, options *HeaderOptions) VHD {
+	header := NewHeader(size, options)
+
+	// Fill the sparse header
+	header2 := NewDynamicHeader(size)
 
 	f, err := os.Create(name)
 	check(err)
@@ -270,6 +247,58 @@ func VHDCreateSparse(size uint64, name string, options VHDOptions) VHD {
 	}
 
 	binary.Write(f, binary.BigEndian, header)
+
+	return VHD{
+		Footer:      header,
+		ExtraHeader: header2,
+	}
+}
+
+func RawToDynamic(f *os.File, options *HeaderOptions) (vhd VHD) {
+	info, err := f.Stat()
+	check(err)
+	size := uint64(info.Size())
+
+	header := NewHeader(size, options)
+	header2 := NewDynamicHeader(size)
+
+	dynf, err := os.Create(info.Name() + ".vhd")
+	check(err)
+	defer dynf.Close()
+
+	binary.Write(dynf, binary.BigEndian, header)
+	binary.Write(dynf, binary.BigEndian, header2)
+
+	/*
+		Write BAT entries
+		The BAT is always extended to a sector (4K) boundary
+		1536 = 512 + 1024 (the VHD Header + VHD Sparse header size)
+	*/
+	for count := uint32(0); count < (FOURK_SECTOR_SIZE - 1536); count += 1 {
+		dynf.Write([]byte{0xff})
+	}
+
+	/* Windows creates 8K VHDs by default */
+	for i := 0; i < (FOURK_SECTOR_SIZE - VHD_HEADER_SIZE); i += 1 {
+		dynf.Write([]byte{0x0})
+	}
+
+	//lastReadZero := false
+	//buf := make([]byte, 512)
+	//for {
+  //  // write bitmap
+	//	f.Write([512]byte)
+	//	_, err := f.Read(buf)
+	//	if err == io.EOF {
+	//		break
+	//	} else {
+	//		panic(err)
+	//	}
+	//	f.Write(buf)
+	//}
+
+	// write footer
+	binary.Write(dynf, binary.BigEndian, header)
 
 	return VHD{
 		Footer:      header,
@@ -464,6 +493,15 @@ func readVHDFooter(f *os.File) (header VHDHeader) {
 	binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
 
 	return header
+}
+
+func zeroed(buf []byte) bool {
+	for _, b := range(buf) {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func readVHDHeader(f *os.File) (header VHDHeader) {

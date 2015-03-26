@@ -57,6 +57,21 @@ func vhdInfo(vhdFile string) {
 	vhd.PrintInfo()
 }
 
+func vhdDumpBAT(vhdFile string) {
+
+	f, err := os.Open(vhdFile)
+	if err != nil {
+		fmt.Printf("Error opening file %s: %s\n", vhdFile, err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	vhd := vhd.FromFile(f)
+	if err := vhd.DumpBAT(); err != nil {
+		fmt.Println(err)
+	}
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Version = PKG_VERSION
@@ -108,12 +123,25 @@ func main() {
 			},
 		},
 		{
+			Name:  "dumpbat",
+			Usage: "Print VHD Dynamic BAT",
+			Action: func(c *cli.Context) {
+				if len(c.Args()) != 1 {
+					println("Missing command arguments.\n")
+					fmt.Printf("Usage: %s info <file-path>\n",
+						app.Name)
+					os.Exit(1)
+				}
+				vhdDumpBAT(c.Args()[0])
+			},
+		},
+		{
 			Name:  "info",
 			Usage: "Print VHD info",
 			Action: func(c *cli.Context) {
 				if len(c.Args()) != 1 {
 					println("Missing command arguments.\n")
-					fmt.Printf("Usage: %s info <file-path> <size MiB|GiB|...>\n",
+					fmt.Printf("Usage: %s info <file-path>\n",
 						app.Name)
 					os.Exit(1)
 				}

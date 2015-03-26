@@ -28,6 +28,7 @@ const VHD_EXTRA_HEADER_SIZE = 1024
 type VHD struct {
 	Footer      Header
 	ExtraHeader DynamicHeader
+	File        *os.File
 }
 
 // VHD Header
@@ -237,7 +238,7 @@ func CreateSparse(size uint64, name string, options *HeaderOptions) VHD {
 		The BAT is always extended to a sector (4K) boundary
 		1536 = 512 + 1024 (the VHD Header + VHD Sparse header size)
 	*/
-	for count := uint32(0); count < (FOURK_SECTOR_SIZE - 1536); count += 1 {
+	for count := 0; count < (FOURK_SECTOR_SIZE - 1536); count += 1 {
 		f.Write([]byte{0xff})
 	}
 
@@ -314,6 +315,7 @@ func FromFile(f *os.File) (vhd VHD) {
 	vhd = VHD{}
 	vhd.Footer = readFooter(f)
 	vhd.ExtraHeader = readDynamicHeader(f)
+	vhd.File = f
 
 	return vhd
 }
@@ -409,6 +411,40 @@ func (vhd *VHD) PrintFooter() {
 	fmtField("Checksum", hexs(header.Checksum[:]))
 	fmtField("UUID", uuid(header.UniqueId[:]))
 	fmtField("Saved state", fmt.Sprintf("%d", header.SavedState[0]))
+}
+
+func (vhd *VHD) DumpBAT() error {
+	if vhd.File == nil {
+		return fmt.Errorf("No file associated to the VHD struct")
+	}
+
+	diskType := vhd.Footer.DiskTypeStr()
+	if diskType != "Dynamic" && diskType != "Differential" {
+		return fmt.Errorf("Disk type needs to be Differential or Dynamic")
+	}
+
+	// BAT starts here (header + dynamic header offset)
+	tableOffset := vhd.ExtraHeader.TableOffsetNum()
+	if _, err := vhd.File.Seek(int64(tableOffset), os.SEEK_SET); err != nil {
+		return err
+	}
+
+	// 4 bytes every BAT table entry
+	batSize := vhd.ExtraHeader.MaxTableEntriesNum() * 4
+	buf := make([]byte, batSize)
+	_, err := vhd.File.Read(buf)
+	check(err)
+	fmt.Println(hex.Dump(buf))
+
+	return nil
+}
+
+func (dynHeader *DynamicHeader) MaxTableEntriesNum() uint32 {
+	return binary.BigEndian.Uint32(dynHeader.MaxTableEntries[:])
+}
+
+func (dynHeader *DynamicHeader) TableOffsetNum() uint64 {
+	return binary.BigEndian.Uint64(dynHeader.TableOffset[:])
 }
 
 /*

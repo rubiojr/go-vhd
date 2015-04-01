@@ -35,13 +35,14 @@ func rawToFixed(file string, options *vhd.HeaderOptions) {
 }
 
 func rawToDynamic(file string, options *vhd.HeaderOptions) {
-	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.Open(file)
 	if err != nil {
 		fmt.Printf("Error opening file %s: %s\n", file, err)
 		os.Exit(1)
 	}
+	defer f.Close()
+
 	vhd.RawToDynamic(f, options)
-	f.Close()
 }
 
 func vhdInfo(vhdFile string) {

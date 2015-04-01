@@ -11,7 +11,7 @@ import (
 	"os"
 	"strconv"
 	"time"
-	//"io"
+	"io"
 )
 
 const VHD_COOKIE = "636f6e6563746978"     // conectix
@@ -275,32 +275,59 @@ func RawToDynamic(f *os.File, options *HeaderOptions) (vhd VHD) {
 		The BAT is always extended to a sector (4K) boundary
 		1536 = 512 + 1024 (the VHD Header + VHD Sparse header size)
 	*/
-	for count := uint32(0); count < (FOURK_SECTOR_SIZE - 1536); count += 1 {
+	batSize := header2.MaxTableEntriesNum() * 4
+	roundedBat := 4096 - ((1536 + batSize) % 4096) + batSize
+	for count := uint32(0); count < roundedBat; count += 1 {
 		dynf.Write([]byte{0xff})
 	}
+	dataStart := header2.TableOffsetNum() + uint64(roundedBat)
 
-	/* Windows creates 8K VHDs by default */
-	for i := 0; i < (FOURK_SECTOR_SIZE - VHD_HEADER_SIZE); i += 1 {
-		dynf.Write([]byte{0x0})
+	buf := make([]byte, 512)
+	wSectors := 0
+	zSectors := 0
+	allocatedBlocks := 0
+	for {
+		_, err := f.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			panic(err)
+		}
+		// Write bitmap sector
+		if wSectors == 0 {
+			//println("Writing bitmap sector")
+			for count := 0; count < 512; count++ {
+				dynf.Write([]byte{0xff})
+			}
+			wSectors++
+		}
+		if zeroed(buf) {
+			zSectors += 1
+			continue
+		}
+
+		dynf.Write(buf)
+		wSectors++
+
+		if wSectors == 4096 {
+			wSectors = 0
+			allocatedBlocks += 1
+		}
 	}
-
-	//lastReadZero := false
-	//buf := make([]byte, 512)
-	//for {
-	//  // write bitmap
-	//	f.Write([512]byte)
-	//	_, err := f.Read(buf)
-	//	if err == io.EOF {
-	//		break
-	//	} else {
-	//		panic(err)
-	//	}
-	//	f.Write(buf)
-	//}
 
 	// write footer
 	binary.Write(dynf, binary.BigEndian, header)
 
+	dynf.Seek(1536, os.SEEK_SET)
+	blockAllocPos := uint32(dataStart)
+	for i := 0; i < allocatedBlocks + 1; i++ {
+		println(blockAllocPos)
+		binary.Write(dynf, binary.BigEndian, blockAllocPos)
+		blockAllocPos += (512 + 2097152)
+	}
+
+	fmt.Printf("Zeroed sectors: %d\n", zSectors)
 	return VHD{
 		Footer:      header,
 		ExtraHeader: header2,

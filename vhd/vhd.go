@@ -148,11 +148,7 @@ func (h *VHDHeader) addChecksum() {
 	binary.BigEndian.PutUint32(h.Checksum[:], uint32(^checksum))
 }
 
-func RawToFixed(f *os.File, options *VHDOptions) {
-	info, err := f.Stat()
-	check(err)
-	size := uint64(info.Size())
-
+func CreateFixedHeader(size uint64, options *VHDOptions) VHDHeader {
 	header := VHDHeader{}
 	hexToField(VHD_COOKIE, header.Cookie[:])
 	hexToField("00000002", header.Features[:])
@@ -190,7 +186,14 @@ func RawToFixed(f *os.File, options *VHDOptions) {
 	}
 
 	header.addChecksum()
+	return header
+}
 
+func RawToFixed(f *os.File, options *VHDOptions) {
+	info, err := f.Stat()
+	check(err)
+	size := uint64(info.Size())
+	header := CreateFixedHeader(size, options)
 	binary.Write(f, binary.BigEndian, header)
 }
 

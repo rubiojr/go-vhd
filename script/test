@@ -32,3 +32,10 @@ if [ "$md5" != "31876442a7f7304fedb01fd455393038" ]; then
 else
   echo "raw2fixed: Fail!" && exit 1
 fi
+
+img=test-images/win8-child.vhd
+if ./go-vhd info $img | grep -q -iE '^Parent Name.*C:\\Users\\sergi\\Downloads\\win8.vhd'; then
+  echo "parent-name: OK"
+else
+  echo "parent-name: Fail!" && exit 1
+fi

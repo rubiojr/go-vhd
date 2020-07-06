@@ -1,7 +1,7 @@
 package main
 
 import (
-	"./vhd"
+	"go-vhd/vhd"
 	"fmt"
 	"github.com/urfave/cli"
 	"github.com/dustin/go-humanize"
